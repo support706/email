@@ -1,64 +1,24 @@
-"""
-EMCC USA Certificate Generator - Cloud Function
-Deploy on Railway, Render, or any Python host.
-
-The PPTX template is stored in a PRIVATE Google Drive file and
-downloaded at startup using a Google Service Account — it never
-touches GitHub or any public storage.
-
-Requirements: pip install flask python-pptx google-api-python-client
-              google-auth-httplib2 google-auth-oauthlib
-LibreOffice must be installed on the server for PDF conversion.
-"""
-
 import io
-import json
 import os
 import subprocess
 import tempfile
 from datetime import datetime
 
+import dropbox
 from flask import Flask, jsonify, request, send_file
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
 from pptx import Presentation
 
 app = Flask(__name__)
-
-# ── Environment variables (set these in Railway) ──────────────────────────────
-# API_SECRET        : shared secret to protect your endpoint
-# GDRIVE_FILE_ID    : the ID from the Google Drive share link of your PPTX
-#                     e.g. https://drive.google.com/file/d/THIS_PART/view
-# GOOGLE_SA_JSON    : the full contents of your service account JSON key file
-#                     (paste the entire JSON as one line in the env variable)
-# ─────────────────────────────────────────────────────────────────────────────
-API_SECRET     = os.environ.get("API_SECRET", "change-me-in-env")
-GDRIVE_FILE_ID = os.environ.get("GDRIVE_FILE_ID", "")
-GOOGLE_SA_JSON = os.environ.get("GOOGLE_SA_JSON", "")
-
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-
-
-def get_drive_service():
-    """Build a Google Drive service client from the service account JSON."""
-    sa_info = json.loads(GOOGLE_SA_JSON)
-    creds = service_account.Credentials.from_service_account_info(
-        sa_info, scopes=SCOPES
-    )
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
+API_SECRET           = os.environ.get("API_SECRET", "change-me-in-env")
+DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN", "")
+DROPBOX_FILE_PATH    = os.environ.get("DROPBOX_FILE_PATH", "/EMCC_Certificate_TEMPLATE.pptx")
 
 
 def download_template() -> bytes:
-    """Download the PPTX template from Google Drive and return raw bytes."""
-    service = get_drive_service()
-    request_dl = service.files().get_media(fileId=GDRIVE_FILE_ID)
-    buffer = io.BytesIO()
-    downloader = MediaIoBaseDownload(buffer, request_dl)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-    return buffer.getvalue()
+    """Download the PPTX template from private Dropbox and return raw bytes."""
+    dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+    _, response = dbx.files_download(DROPBOX_FILE_PATH)
+    return response.content
 
 
 def replace_placeholders(prs: Presentation, replacements: dict) -> Presentation:
@@ -130,7 +90,7 @@ def generate_certificate():
         "{{VALID_DATE}}":  format_date(valid_dt),
     }
 
-    # Download template from private Google Drive
+    # Download template from private Dropbox
     try:
         template_bytes = download_template()
     except Exception as e:
