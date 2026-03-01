@@ -40,13 +40,6 @@ def download_template() -> bytes:
     except Exception as e:
         print(f"  Error: {e}")
     
-    print("\n=== Listing /certificates/ folder ===")
-    try:
-        result = dbx.files_list_folder("/certificates")
-        for entry in result.entries:
-            print(f"  {entry.path_display}")
-    except Exception as e:
-        print(f"  Error listing /certificates: {e}")
     _, response = dbx.files_download(DROPBOX_FILE_PATH)
     return response.content
 
