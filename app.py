@@ -131,11 +131,11 @@ def generate_certificate():
 
     # Parse input
     data = request.get_json(force=True)
-    print(data)
+    print(f"data {data}")
     first_name = data.get("first_name", "").strip()
-    print(first_name)
+    print(f"first_name {first_name}")
     last_name  = data.get("last_name", "").strip()
-    print(last_name)
+    print(f"last_name {last_name}")
     issued_date_str = data.get("issued_date")
 
     if not first_name or not last_name:
