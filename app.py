@@ -133,7 +133,7 @@ def generate_certificate():
     data = request.get_json(force=True)
     print(data)
     first_name = data.get("first_name", "").strip()
-    print(fist_name)
+    print(first_name)
     last_name  = data.get("last_name", "").strip()
     print(last_name)
     issued_date_str = data.get("issued_date")
