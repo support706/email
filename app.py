@@ -2,10 +2,10 @@
 EMCC USA Certificate Generator
 Deploy on Railway.
 
-The PPTX template is stored in a PRIVATE Dropbox folder.
-Authentication uses app key + secret + refresh token (never expires).
+Conversion pipeline: PPTX → PNG (via LibreOffice) → PDF (via img2pdf)
+This gives pixel-perfect output matching the original PPTX design.
 
-Requirements: pip install flask python-pptx dropbox gunicorn
+Requirements: pip install flask python-pptx dropbox gunicorn pypdf img2pdf
 LibreOffice must be installed (via Dockerfile on Railway).
 """
 
@@ -16,19 +16,14 @@ import tempfile
 from datetime import datetime
 
 import dropbox
+import img2pdf
 from flask import Flask, jsonify, request, send_file
+from pypdf import PdfReader, PdfWriter
 from pptx import Presentation
 
 app = Flask(__name__)
 
 # ── Environment variables (set these in Railway) ──────────────────────────────
-# API_SECRET              : shared secret to protect your endpoint
-# DROPBOX_APP_KEY         : from dropbox.com/developers/apps → Settings tab
-# DROPBOX_APP_SECRET      : from dropbox.com/developers/apps → Settings tab
-# DROPBOX_REFRESH_TOKEN   : generated once using get_dropbox_token.py
-# DROPBOX_FILE_PATH       : path to PPTX in your Dropbox
-#                           e.g. /certificates/EMCC_Certificate_TEMPLATE.pptx
-# ─────────────────────────────────────────────────────────────────────────────
 API_SECRET            = os.environ.get("API_SECRET", "change-me-in-env")
 DROPBOX_APP_KEY       = os.environ.get("DROPBOX_APP_KEY", "")
 DROPBOX_APP_SECRET    = os.environ.get("DROPBOX_APP_SECRET", "")
@@ -62,19 +57,22 @@ def replace_placeholders(prs: Presentation, replacements: dict) -> Presentation:
 
 
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
-    """Convert PPTX to PDF using LibreOffice headless."""
-
-    # Use a unique temp profile dir per request to avoid soffice lock conflicts
+    """
+    Convert PPTX → PNG → PDF pipeline for pixel-perfect output.
+    LibreOffice renders to PNG (preserving all fonts/layout),
+    then img2pdf combines the PNG into a PDF without any re-encoding distortion.
+    """
     profile_dir = os.path.join(output_dir, "soffice_profile")
     os.makedirs(profile_dir, exist_ok=True)
 
+    # Step 1: PPTX → PNG via LibreOffice
     result = subprocess.run(
         [
             "soffice",
             "--headless",
             "--norestore",
             f"-env:UserInstallation=file://{profile_dir}",
-            "--convert-to", "pdf",
+            "--convert-to", "png",
             "--outdir", output_dir,
             pptx_path,
         ],
@@ -84,23 +82,51 @@ def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
         env={**os.environ, "HOME": "/tmp"},
     )
 
-    # Check the PDF was actually created
     base_name = os.path.splitext(os.path.basename(pptx_path))[0]
-    pdf_path = os.path.join(output_dir, base_name + ".pdf")
+    png_path = os.path.join(output_dir, base_name + ".png")
 
-    if not os.path.exists(pdf_path):
+    if not os.path.exists(png_path):
         stderr_clean = "\n".join(
             line for line in result.stderr.splitlines()
             if "javaldx" not in line and line.strip()
         )
         raise RuntimeError(
-            f"LibreOffice did not produce a PDF.\n"
+            f"LibreOffice PNG export failed.\n"
             f"Return code: {result.returncode}\n"
             f"Stderr: {stderr_clean}\n"
             f"Stdout: {result.stdout.strip()}"
         )
 
+    # Step 2: PNG → PDF via img2pdf (lossless, exact dimensions)
+    pdf_path = os.path.join(output_dir, base_name + ".pdf")
+    with open(pdf_path, "wb") as f:
+        f.write(img2pdf.convert(png_path))
+
     return pdf_path
+
+
+def set_pdf_metadata(pdf_path: str, first_name: str, last_name: str, issued_date: str) -> None:
+    """Embed custom metadata into the generated PDF."""
+    reader = PdfReader(pdf_path)
+    writer = PdfWriter()
+
+    for page in reader.pages:
+        writer.add_page(page)
+
+    writer.add_metadata(reader.metadata or {})
+    writer.add_metadata({
+        "/Title":    f"EMCC USA Membership Certificate — {first_name} {last_name}",
+        "/Author":   "EMCC USA",
+        "/Subject":  "Individual Membership Certificate",
+        "/Keywords": f"EMCC, membership, certificate, {first_name} {last_name}",
+        "/Creator":  "EMCC USA Certificate Generator",
+        "/Producer": "EMCC USA",
+        "/IssuedTo": f"{first_name} {last_name}",
+        "/IssuedOn": issued_date,
+    })
+
+    with open(pdf_path, "wb") as f:
+        writer.write(f)
 
 
 def format_date(dt: datetime) -> str:
@@ -152,6 +178,11 @@ def generate_certificate():
             pdf_path = convert_pptx_to_pdf(pptx_out, tmpdir)
         except Exception as e:
             return jsonify({"error": f"PDF conversion failed: {str(e)}"}), 500
+
+        try:
+            set_pdf_metadata(pdf_path, first_name, last_name, format_date(issued_dt))
+        except Exception:
+            pass  # metadata is non-critical
 
         return send_file(
             pdf_path,
