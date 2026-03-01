@@ -1,14 +1,3 @@
-"""
-EMCC USA Certificate Generator
-Deploy on Railway.
-
-The PPTX template is stored in a PRIVATE Dropbox folder.
-Authentication uses app key + secret + refresh token (never expires).
-
-Requirements: pip install flask python-pptx dropbox gunicorn
-LibreOffice must be installed (via Dockerfile on Railway).
-"""
-
 import io
 import os
 import subprocess
@@ -43,34 +32,11 @@ SLIDE_HEIGHT_MM = 210
 
 def download_template() -> bytes:
     """Download the PPTX template from private Dropbox using refresh token."""
-    print("Authenticating to dropbox")
     dbx = dropbox.Dropbox(
         oauth2_refresh_token=DROPBOX_REFRESH_TOKEN,
         app_key=DROPBOX_APP_KEY,
         app_secret=DROPBOX_APP_SECRET,
     )
-    print("=== Checking account info ===")
-    account = dbx.users_get_current_account()
-    print(f"Logged in as: {account.email}")
-
-    print("\n=== Listing root folder contents ===")
-    try:
-        result = dbx.files_list_folder("")
-        if result.entries:
-            for entry in result.entries:
-                print(f"  {entry.path_display}")
-        else:
-            print("  (root folder is empty — app likely has App Folder access only)")
-    except Exception as e:
-        print(f"  Error listing root: {e}")
-
-    print("\n=== Trying to access the file directly ===")
-    try:
-        metadata = dbx.files_get_metadata(DROPBOX_FILE_PATH)
-        print(f"  Found: {metadata.path_display} ({metadata.size} bytes)")
-        print(f"  Found: {metadata.path_display} ")
-    except Exception as e:
-        print(f"  Error: {e}")
     _, response = dbx.files_download(DROPBOX_FILE_PATH)
     return response.content
 
@@ -92,19 +58,23 @@ def replace_placeholders(prs: Presentation, replacements: dict) -> Presentation:
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
     """Convert PPTX to PDF using LibreOffice headless with exact page dimensions."""
 
-    # Write a LibreOffice filter config that forces exact A4-landscape page size
-    # This prevents LibreOffice from guessing/rescaling the slide canvas
+    # Filter options force exact A4-landscape page size (in 1/100 mm units)
     filter_options = (
         "impress_pdf_Export:"
         "PageRange=1,"
-        f"PageWidth={SLIDE_WIDTH_MM * 100},"   # in 1/100 mm units
-        f"PageHeight={SLIDE_HEIGHT_MM * 100}"   # in 1/100 mm units
+        f"PageWidth={SLIDE_WIDTH_MM * 100},"
+        f"PageHeight={SLIDE_HEIGHT_MM * 100}"
     )
+
+    # Use a unique temp profile dir per request to avoid soffice lock conflicts
+    profile_dir = os.path.join(output_dir, "soffice_profile")
+    os.makedirs(profile_dir, exist_ok=True)
 
     result = subprocess.run(
         [
             "soffice",
             "--headless",
+            f"-env:UserInstallation=file://{profile_dir}",
             "--infilter=Impress MS PowerPoint 2007 XML",
             f"--convert-to=pdf:{filter_options}",
             "--outdir", output_dir,
@@ -112,17 +82,28 @@ def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
         ],
         capture_output=True,
         text=True,
-        timeout=60,
-        env={**os.environ, "HOME": "/tmp"},  # prevent soffice profile conflicts
+        timeout=120,
+        env={**os.environ, "HOME": "/tmp"},
     )
 
-    if result.returncode != 0:
-        raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
+    # javaldx warning is harmless — only fail on real errors
+    stderr_clean = "\n".join(
+        line for line in result.stderr.splitlines()
+        if "javaldx" not in line and line.strip()
+    )
 
+    # Check the PDF was actually created (more reliable than return code)
     base_name = os.path.splitext(os.path.basename(pptx_path))[0]
     pdf_path = os.path.join(output_dir, base_name + ".pdf")
+
     if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF not found after conversion: {pdf_path}")
+        raise RuntimeError(
+            f"LibreOffice did not produce a PDF.\n"
+            f"Return code: {result.returncode}\n"
+            f"Stderr: {stderr_clean}\n"
+            f"Stdout: {result.stdout}"
+        )
+
     return pdf_path
 
 
@@ -136,7 +117,7 @@ def generate_certificate():
     # Authenticate
     if request.headers.get("X-API-Secret", "") != API_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
-    print("going to generate certificate")
+
     # Parse input
     data = request.get_json(force=True)
     first_name = data.get("first_name", "").strip()
