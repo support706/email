@@ -16,7 +16,37 @@ DROPBOX_FILE_PATH    = os.environ.get("DROPBOX_FILE_PATH", "/EMCC_Certificate_TE
 
 def download_template() -> bytes:
     """Download the PPTX template from private Dropbox and return raw bytes."""
+    
     dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+    print("=== Checking account info ===")
+    account = dbx.users_get_current_account()
+    print(f"Logged in as: {account.email}")
+    
+    print("\n=== Listing root folder contents ===")
+    try:
+        result = dbx.files_list_folder("")
+        if result.entries:
+            for entry in result.entries:
+                print(f"  {entry.path_display}")
+        else:
+            print("  (root folder is empty — app likely has App Folder access only)")
+    except Exception as e:
+        print(f"  Error listing root: {e}")
+
+    print("\n=== Trying to access the file directly ===")
+    try:
+        metadata = dbx.files_get_metadata(DROPBOX_FILE_PATH)
+        print(f"  Found: {metadata.path_display} ({metadata.size} bytes)")
+    except Exception as e:
+        print(f"  Error: {e}")
+    
+    print("\n=== Listing /certificates/ folder ===")
+    try:
+        result = dbx.files_list_folder("/certificates")
+        for entry in result.entries:
+            print(f"  {entry.path_display}")
+    except Exception as e:
+    print(f"  Error listing /certificates: {e}")
     _, response = dbx.files_download(DROPBOX_FILE_PATH)
     return response.content
 
