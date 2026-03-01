@@ -1,9 +1,11 @@
 FROM python:3.11-slim
 
 # Install LibreOffice, fonts, and dependencies
+# libreoffice-java-common is excluded to prevent the javaldx warning
 RUN apt-get update && apt-get install -y \
     libreoffice \
     libreoffice-writer \
+    libreoffice-impress \
     libglib2.0-0 \
     libsm6 \
     libxrender1 \
@@ -15,6 +17,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     --no-install-recommends \
+    && apt-get purge -y default-jre-headless java-common \
+    && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
