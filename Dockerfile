@@ -18,12 +18,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Montserrat font (used in the certificate)
-RUN mkdir -p /usr/share/fonts/truetype/montserrat \
-    && wget -q "https://fonts.google.com/download?family=Montserrat" -O /tmp/Montserrat.zip \
-    && unzip -q /tmp/Montserrat.zip -d /tmp/Montserrat \
-    && find /tmp/Montserrat -name "*.ttf" -exec cp {} /usr/share/fonts/truetype/montserrat/ \; \
-    && rm -rf /tmp/Montserrat.zip /tmp/Montserrat
+# Install Montserrat font from GitHub (direct .zip release)
+RUN wget -q "https://github.com/JulietaUla/Montserrat/archive/refs/heads/master.zip" -O /tmp/Montserrat.zip \
+    && unzip -q /tmp/Montserrat.zip "Montserrat-master/fonts/ttf/*" -d /tmp/ \
+    && mkdir -p /usr/share/fonts/truetype/montserrat \
+    && cp /tmp/Montserrat-master/fonts/ttf/*.ttf /usr/share/fonts/truetype/montserrat/ \
+    && rm -rf /tmp/Montserrat.zip /tmp/Montserrat-master
 
 # Install Microsoft core fonts (includes Tahoma, Arial, etc.)
 RUN echo "deb http://deb.debian.org/debian bookworm contrib" >> /etc/apt/sources.list \
