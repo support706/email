@@ -1,3 +1,14 @@
+"""
+EMCC USA Certificate Generator
+Deploy on Railway.
+
+The PPTX template is stored in a PRIVATE Dropbox folder.
+Authentication uses app key + secret + refresh token (never expires).
+
+Requirements: pip install flask python-pptx dropbox gunicorn
+LibreOffice must be installed (via Dockerfile on Railway).
+"""
+
 import io
 import os
 import subprocess
@@ -9,37 +20,34 @@ from flask import Flask, jsonify, request, send_file
 from pptx import Presentation
 
 app = Flask(__name__)
-API_SECRET           = os.environ.get("API_SECRET", "change-me-in-env")
-DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN", "")
-DROPBOX_FILE_PATH    = os.environ.get("DROPBOX_FILE_PATH", "/EMCC_Certificate_TEMPLATE.pptx")
+
+# ── Environment variables (set these in Railway) ──────────────────────────────
+# API_SECRET              : shared secret to protect your endpoint
+# DROPBOX_APP_KEY         : from dropbox.com/developers/apps → Settings tab
+# DROPBOX_APP_SECRET      : from dropbox.com/developers/apps → Settings tab
+# DROPBOX_REFRESH_TOKEN   : generated once using get_dropbox_token.py
+# DROPBOX_FILE_PATH       : path to PPTX in your Dropbox
+#                           e.g. /certificates/EMCC_Certificate_TEMPLATE.pptx
+# ─────────────────────────────────────────────────────────────────────────────
+API_SECRET            = os.environ.get("API_SECRET", "change-me-in-env")
+DROPBOX_APP_KEY       = os.environ.get("DROPBOX_APP_KEY", "")
+DROPBOX_APP_SECRET    = os.environ.get("DROPBOX_APP_SECRET", "")
+DROPBOX_REFRESH_TOKEN = os.environ.get("DROPBOX_REFRESH_TOKEN", "")
+DROPBOX_FILE_PATH     = os.environ.get("DROPBOX_FILE_PATH", "/EMCC_Certificate_TEMPLATE.pptx")
+
+# Slide dimensions in EMUs → A4 landscape (297mm x 210mm)
+# Slide cx=10693400, cy=7562850 EMUs = 297.04mm x 210.08mm
+SLIDE_WIDTH_MM  = 297
+SLIDE_HEIGHT_MM = 210
 
 
 def download_template() -> bytes:
-    """Download the PPTX template from private Dropbox and return raw bytes."""
-    
-    dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
-    print("=== Checking account info ===")
-    account = dbx.users_get_current_account()
-    print(f"Logged in as: {account.email}")
-    
-    print("\n=== Listing root folder contents ===")
-    try:
-        result = dbx.files_list_folder("")
-        if result.entries:
-            for entry in result.entries:
-                print(f"  {entry.path_display}")
-        else:
-            print("  (root folder is empty — app likely has App Folder access only)")
-    except Exception as e:
-        print(f"  Error listing root: {e}")
-
-    print("\n=== Trying to access the file directly ===")
-    try:
-        metadata = dbx.files_get_metadata(DROPBOX_FILE_PATH)
-        print(f"  Found: {metadata.path_display} ")
-    except Exception as e:
-        print(f"  Error: {e}")
-    
+    """Download the PPTX template from private Dropbox using refresh token."""
+    dbx = dropbox.Dropbox(
+        oauth2_refresh_token=DROPBOX_REFRESH_TOKEN,
+        app_key=DROPBOX_APP_KEY,
+        app_secret=DROPBOX_APP_SECRET,
+    )
     _, response = dbx.files_download(DROPBOX_FILE_PATH)
     return response.content
 
@@ -59,19 +67,32 @@ def replace_placeholders(prs: Presentation, replacements: dict) -> Presentation:
 
 
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
-    """Convert PPTX to PDF using LibreOffice headless."""
+    """Convert PPTX to PDF using LibreOffice headless with exact page dimensions."""
+
+    # Write a LibreOffice filter config that forces exact A4-landscape page size
+    # This prevents LibreOffice from guessing/rescaling the slide canvas
+    filter_options = (
+        "impress_pdf_Export:"
+        "PageRange=1,"
+        f"PageWidth={SLIDE_WIDTH_MM * 100},"   # in 1/100 mm units
+        f"PageHeight={SLIDE_HEIGHT_MM * 100}"   # in 1/100 mm units
+    )
+
     result = subprocess.run(
         [
             "soffice",
             "--headless",
-            "--convert-to", "pdf",
+            "--infilter=Impress MS PowerPoint 2007 XML",
+            f"--convert-to=pdf:{filter_options}",
             "--outdir", output_dir,
             pptx_path,
         ],
         capture_output=True,
         text=True,
         timeout=60,
+        env={**os.environ, "HOME": "/tmp"},  # prevent soffice profile conflicts
     )
+
     if result.returncode != 0:
         raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
 
@@ -97,7 +118,7 @@ def generate_certificate():
     data = request.get_json(force=True)
     first_name = data.get("first_name", "").strip()
     last_name  = data.get("last_name", "").strip()
-    issued_date_str = data.get("issued_date")  # ISO format: 2026-02-27
+    issued_date_str = data.get("issued_date")
 
     if not first_name or not last_name:
         return jsonify({"error": "first_name and last_name are required"}), 400
