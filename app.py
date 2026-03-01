@@ -86,7 +86,7 @@ def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
             f"Stdout: {result.stdout.strip()}"
         )
 
-    # Step 2: PNG → PDF via img2pdf (lossless, exact dimensions)
+    #  Step 2: PNG → PDF via img2pdf (lossless, exact dimensions)
     pdf_path = os.path.join(output_dir, base_name + ".pdf")
     with open(pdf_path, "wb") as f:
         f.write(img2pdf.convert(png_path))
