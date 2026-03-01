@@ -1,14 +1,3 @@
-"""
-EMCC USA Certificate Generator
-Deploy on Railway.
-
-Conversion pipeline: PPTX → PNG (via LibreOffice) → PDF (via img2pdf)
-This gives pixel-perfect output matching the original PPTX design.
-
-Requirements: pip install flask python-pptx dropbox gunicorn pypdf img2pdf
-LibreOffice must be installed (via Dockerfile on Railway).
-"""
-
 import io
 import os
 import subprocess
@@ -150,8 +139,14 @@ def generate_certificate():
         return jsonify({"error": "first_name and last_name are required"}), 400
 
     # Compute dates
-    issued_dt = datetime.fromisoformat(issued_date_str) if issued_date_str else datetime.today()
-    valid_dt  = issued_dt.replace(year=issued_dt.year + 1)
+    # Strip timezone offset if present (e.g. "2026-03-01T00:00:00.000-05:00")
+    if issued_date_str:
+        # Remove timezone info and milliseconds, keep just the date portion
+        issued_date_clean = issued_date_str[:10]  # "2026-03-01"
+        issued_dt = datetime.strptime(issued_date_clean, "%Y-%m-%d")
+    else:
+        issued_dt = datetime.today()
+    valid_dt = issued_dt.replace(year=issued_dt.year + 1)
 
     replacements = {
         "{{FIRST_NAME}}":  first_name,
