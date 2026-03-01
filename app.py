@@ -1,3 +1,14 @@
+"""
+EMCC USA Certificate Generator
+Deploy on Railway.
+
+The PPTX template is stored in a PRIVATE Dropbox folder.
+Authentication uses app key + secret + refresh token (never expires).
+
+Requirements: pip install flask python-pptx dropbox gunicorn
+LibreOffice must be installed (via Dockerfile on Railway).
+"""
+
 import io
 import os
 import subprocess
@@ -23,11 +34,6 @@ DROPBOX_APP_KEY       = os.environ.get("DROPBOX_APP_KEY", "")
 DROPBOX_APP_SECRET    = os.environ.get("DROPBOX_APP_SECRET", "")
 DROPBOX_REFRESH_TOKEN = os.environ.get("DROPBOX_REFRESH_TOKEN", "")
 DROPBOX_FILE_PATH     = os.environ.get("DROPBOX_FILE_PATH", "/EMCC_Certificate_TEMPLATE.pptx")
-
-# Slide dimensions in EMUs → A4 landscape (297mm x 210mm)
-# Slide cx=10693400, cy=7562850 EMUs = 297.04mm x 210.08mm
-SLIDE_WIDTH_MM  = 297
-SLIDE_HEIGHT_MM = 210
 
 
 def download_template() -> bytes:
@@ -56,15 +62,7 @@ def replace_placeholders(prs: Presentation, replacements: dict) -> Presentation:
 
 
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
-    """Convert PPTX to PDF using LibreOffice headless with exact page dimensions."""
-
-    # Filter options force exact A4-landscape page size (in 1/100 mm units)
-    filter_options = (
-        "impress_pdf_Export:"
-        "PageRange=1,"
-        f"PageWidth={SLIDE_WIDTH_MM * 100},"
-        f"PageHeight={SLIDE_HEIGHT_MM * 100}"
-    )
+    """Convert PPTX to PDF using LibreOffice headless."""
 
     # Use a unique temp profile dir per request to avoid soffice lock conflicts
     profile_dir = os.path.join(output_dir, "soffice_profile")
@@ -74,9 +72,9 @@ def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
         [
             "soffice",
             "--headless",
+            "--norestore",
             f"-env:UserInstallation=file://{profile_dir}",
-            "--infilter=Impress MS PowerPoint 2007 XML",
-            f"--convert-to=pdf:{filter_options}",
+            "--convert-to", "pdf",
             "--outdir", output_dir,
             pptx_path,
         ],
@@ -86,22 +84,20 @@ def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> str:
         env={**os.environ, "HOME": "/tmp"},
     )
 
-    # javaldx warning is harmless — only fail on real errors
-    stderr_clean = "\n".join(
-        line for line in result.stderr.splitlines()
-        if "javaldx" not in line and line.strip()
-    )
-
-    # Check the PDF was actually created (more reliable than return code)
+    # Check the PDF was actually created
     base_name = os.path.splitext(os.path.basename(pptx_path))[0]
     pdf_path = os.path.join(output_dir, base_name + ".pdf")
 
     if not os.path.exists(pdf_path):
+        stderr_clean = "\n".join(
+            line for line in result.stderr.splitlines()
+            if "javaldx" not in line and line.strip()
+        )
         raise RuntimeError(
             f"LibreOffice did not produce a PDF.\n"
             f"Return code: {result.returncode}\n"
             f"Stderr: {stderr_clean}\n"
-            f"Stdout: {result.stdout}"
+            f"Stdout: {result.stdout.strip()}"
         )
 
     return pdf_path
