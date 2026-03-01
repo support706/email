@@ -43,6 +43,7 @@ SLIDE_HEIGHT_MM = 210
 
 def download_template() -> bytes:
     """Download the PPTX template from private Dropbox using refresh token."""
+    print("Authenticating to dropbox")
     dbx = dropbox.Dropbox(
         oauth2_refresh_token=DROPBOX_REFRESH_TOKEN,
         app_key=DROPBOX_APP_KEY,
@@ -135,7 +136,7 @@ def generate_certificate():
     # Authenticate
     if request.headers.get("X-API-Secret", "") != API_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
-
+    print("going to generate certificate")
     # Parse input
     data = request.get_json(force=True)
     first_name = data.get("first_name", "").strip()
