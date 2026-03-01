@@ -48,6 +48,28 @@ def download_template() -> bytes:
         app_key=DROPBOX_APP_KEY,
         app_secret=DROPBOX_APP_SECRET,
     )
+    print("=== Checking account info ===")
+    account = dbx.users_get_current_account()
+    print(f"Logged in as: {account.email}")
+
+    print("\n=== Listing root folder contents ===")
+    try:
+        result = dbx.files_list_folder("")
+        if result.entries:
+            for entry in result.entries:
+                print(f"  {entry.path_display}")
+        else:
+            print("  (root folder is empty — app likely has App Folder access only)")
+    except Exception as e:
+        print(f"  Error listing root: {e}")
+
+    print("\n=== Trying to access the file directly ===")
+    try:
+        metadata = dbx.files_get_metadata(DROPBOX_FILE_PATH)
+        print(f"  Found: {metadata.path_display} ({metadata.size} bytes)")
+        print(f"  Found: {metadata.path_display} ")
+    except Exception as e:
+        print(f"  Error: {e}")
     _, response = dbx.files_download(DROPBOX_FILE_PATH)
     return response.content
 
