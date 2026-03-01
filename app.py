@@ -36,7 +36,7 @@ def download_template() -> bytes:
     print("\n=== Trying to access the file directly ===")
     try:
         metadata = dbx.files_get_metadata(DROPBOX_FILE_PATH)
-        print(f"  Found: {metadata.path_display} ({metadata.size} bytes)")
+        print(f"  Found: {metadata.path_display} ")
     except Exception as e:
         print(f"  Error: {e}")
     
