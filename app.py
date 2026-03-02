@@ -17,7 +17,7 @@ API_SECRET            = os.environ.get("API_SECRET", "change-me-in-env")
 DROPBOX_APP_KEY       = os.environ.get("DROPBOX_APP_KEY", "")
 DROPBOX_APP_SECRET    = os.environ.get("DROPBOX_APP_SECRET", "")
 DROPBOX_REFRESH_TOKEN = os.environ.get("DROPBOX_REFRESH_TOKEN", "")
-DROPBOX_FILE_PATH     = os.environ.get("DROPBOX_FILE_PATH", "/EMCC_Certificate_TEMPLATE.pptx")
+DROPBOX_FILE_PATH     = os.environ.get("DROPBOX_FILE_PATH", "")
 
 
 def download_template() -> bytes:
@@ -101,18 +101,6 @@ def set_pdf_metadata(pdf_path: str, first_name: str, last_name: str, issued_date
 
     for page in reader.pages:
         writer.add_page(page)
-
-    writer.add_metadata(reader.metadata or {})
-    writer.add_metadata({
-        "/Title":    f"EMCC USA Membership Certificate — {first_name} {last_name}",
-        "/Author":   "EMCC USA",
-        "/Subject":  "Individual Membership Certificate",
-        "/Keywords": f"EMCC, membership, certificate, {first_name} {last_name}",
-        "/Creator":  "EMCC USA Certificate Generator",
-        "/Producer": "EMCC USA",
-        "/IssuedTo": f"{first_name} {last_name}",
-        "/IssuedOn": issued_date,
-    })
 
     with open(pdf_path, "wb") as f:
         writer.write(f)
