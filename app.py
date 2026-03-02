@@ -120,7 +120,7 @@ def set_pdf_metadata(pdf_path: str, first_name: str, last_name: str, issued_date
 
 def format_date(dt: datetime) -> str:
     """Format a datetime as '27 February 2026'."""
-    return dt.strftime("%-d %B %Y")
+    return dt.strftime("%B %-d, %Y")
 
 
 @app.route("/generate-certificate", methods=["POST"])
@@ -130,23 +130,20 @@ def generate_certificate():
         return jsonify({"error": "Unauthorized"}), 401
 
     # Parse input
-    data = request.get_json(force=True)
-    print(f"data {data}")
+    body = request.get_json(force=True)
+    data = body.get("data", body)  # unwrap "data" key if present
     first_name = data.get("first_name", "").strip()
-    print(f"first_name {first_name}")
     last_name  = data.get("last_name", "").strip()
-    print(f"last_name {last_name}")
-    issued_date_str = data.get("issued_date")
+    issued_date_str = data.get("issued_date") or data.get("paid_date")
 
     if not first_name or not last_name:
         return jsonify({"error": "first_name and last_name are required"}), 400
 
     # Compute dates
     # Strip timezone offset if present (e.g. "2026-03-01T00:00:00.000-05:00")
+    issued_dt = None
     if issued_date_str:
-        # Remove timezone info and milliseconds, keep just the date portion
-        issued_date_clean = issued_date_str[:10]  # "2026-03-01"
-        issued_dt = datetime.strptime(issued_date_clean, "%Y-%m-%d")
+        issued_dt = datetime.fromisoformat(issued_date_str)
     else:
         issued_dt = datetime.today()
     valid_dt = issued_dt.replace(year=issued_dt.year + 1)
