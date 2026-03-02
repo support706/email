@@ -183,7 +183,7 @@ def generate_certificate():
             pdf_path,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name=f"EMCC_USA_Certificate_{first_name}_{last_name}.pdf",
+            download_name=f"EMCC_USA_Certificate.pdf",
         )
 
 
